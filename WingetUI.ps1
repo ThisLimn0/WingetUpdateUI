@@ -573,6 +573,9 @@ $script:ProxySettings = @{
 # Installation mode: 'none', 'silent', 'interactive'
 $script:InstallMode = 'none'
 
+# Time format for log: 'datetime', 'timeonly', 'none'
+$script:TimeFormat = 'datetime'
+
 # Force installation flag
 $script:ForceInstall = $false
 
@@ -593,9 +596,30 @@ function Get-String {
 }
 
 function Save-Settings {
+    # Create proxy settings copy with encrypted password
+    $proxyToSave = @{
+        Enabled = $script:ProxySettings.Enabled
+        Server = $script:ProxySettings.Server
+        Port = $script:ProxySettings.Port
+        Type = $script:ProxySettings.Type
+        User = $script:ProxySettings.User
+        EncryptedPassword = ''
+    }
+    
+    # Encrypt password using DPAPI (Windows Data Protection API)
+    if (-not [string]::IsNullOrWhiteSpace($script:ProxySettings.Password)) {
+        try {
+            $secureString = ConvertTo-SecureString -String $script:ProxySettings.Password -AsPlainText -Force
+            $proxyToSave.EncryptedPassword = ConvertFrom-SecureString -SecureString $secureString
+        } catch {
+            # If encryption fails, don't save password
+            $proxyToSave.EncryptedPassword = ''
+        }
+    }
+    
     $settings = @{
         Language = $script:CurrentLanguage
-        Proxy = $script:ProxySettings
+        Proxy = $proxyToSave
         InstallMode = $script:InstallMode
         ForceInstall = $script:ForceInstall
         DarkMode = $script:DarkMode
@@ -622,7 +646,23 @@ function Import-Settings {
                 $script:ProxySettings.Server = [string]$settings.Proxy.Server
                 $script:ProxySettings.Port = [string]$settings.Proxy.Port
                 $script:ProxySettings.User = [string]$settings.Proxy.User
-                $script:ProxySettings.Password = [string]$settings.Proxy.Password
+                
+                # Decrypt password using DPAPI
+                $script:ProxySettings.Password = ''
+                if (-not [string]::IsNullOrWhiteSpace($settings.Proxy.EncryptedPassword)) {
+                    try {
+                        $secureString = ConvertTo-SecureString -String $settings.Proxy.EncryptedPassword
+                        $script:ProxySettings.Password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                            [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureString)
+                        )
+                    } catch {
+                        # Decryption failed (different user/machine), ignore
+                        $script:ProxySettings.Password = ''
+                    }
+                } elseif (-not [string]::IsNullOrWhiteSpace($settings.Proxy.Password)) {
+                    # Legacy: plain text password (migrate on next save)
+                    $script:ProxySettings.Password = [string]$settings.Proxy.Password
+                }
             }
             if ($settings.InstallMode -and $settings.InstallMode -in @('none','silent','interactive')) {
                 $script:InstallMode = $settings.InstallMode
@@ -905,9 +945,6 @@ $MenuTimeDateTime = $window.FindName('MenuTimeDateTime')
 $MenuTimeOnly = $window.FindName('MenuTimeOnly')
 $MenuTimeNone = $window.FindName('MenuTimeNone')
 
-# Time format setting (datetime, timeonly, none)
-$script:TimeFormat = 'datetime'
-
 # Main layout controls for theming
 $RootPanel = $window.FindName('RootPanel')
 $MainGrid = $window.FindName('MainGrid')
@@ -1121,9 +1158,9 @@ function Complete-PendingOperation {
                         # Build tooltip from cache
                         $tooltipLines = @()
                         $tooltipLines += "$($p.Name) ($($p.Id))"
-                        $tooltipLines += "Version: $($p.Version) → $($p.AvailableVersion)"
-                        if (-not [string]::IsNullOrWhiteSpace($p.Publisher)) { $tooltipLines += "Herausgeber: $($p.Publisher)" }
-                        if (-not [string]::IsNullOrWhiteSpace($p.License)) { $tooltipLines += "Lizenz: $($p.License)" }
+                        $tooltipLines += ((Get-String 'TooltipVersion') -f $p.Version, $p.AvailableVersion)
+                        if (-not [string]::IsNullOrWhiteSpace($p.Publisher)) { $tooltipLines += ((Get-String 'TooltipPublisher') -f $p.Publisher) }
+                        if (-not [string]::IsNullOrWhiteSpace($p.License)) { $tooltipLines += ((Get-String 'TooltipLicense') -f $p.License) }
                         if (-not [string]::IsNullOrWhiteSpace($p.Description)) {
                             $desc = $p.Description
                             if ($desc.Length -gt 200) { $desc = $desc.Substring(0, 200) + "..." }
@@ -1177,9 +1214,8 @@ function Complete-PendingOperation {
                                 Add-LogLine -LogBox $LogBox -Message ("{0} {1} ({2}) ExitCode={3}" -f $r.Name, $pkg.AvailableVersion, $r.Id, $r.ExitCode)
                                 Add-LogLine -LogBox $LogBox -Message ("successfully updated to version {0}." -f $pkg.AvailableVersion)
                             } else {
-                                # Show error message, trim to reasonable length
+                                # Store full error message for tooltip display
                                 $errMsg = if (-not [string]::IsNullOrWhiteSpace($r.Error)) { $r.Error } else { "Exit: $($r.ExitCode)" }
-                                if ($errMsg.Length -gt 50) { $errMsg = $errMsg.Substring(0, 47) + "..." }
                                 $pkg.UpdateStatus = $errMsg
                                 Add-LogLine -LogBox $LogBox -Message ("{0} {1} ({2}) ExitCode={3}" -f $r.Name, $pkg.AvailableVersion, $r.Id, $r.ExitCode)
                             }
@@ -1378,11 +1414,11 @@ function Update-UpdateProgress {
             } else {
                 Add-LogLine -LogBox $LogBox -Message ("{0} {1} ({2}) ExitCode={3}" -f $r.Name, $availVer, $r.Id, $r.ExitCode)
                 $errMsg = if (-not [string]::IsNullOrWhiteSpace($r.Error)) { $r.Error } else { "Exit: $($r.ExitCode)" }
-                # Clean up error message
+                # Clean up error message - extract meaningful part but keep full text
                 if ($errMsg -match '0x[0-9a-fA-F]+\s*:\s*(.+)') {
                     $errMsg = $Matches[1]
                 }
-                if ($errMsg.Length -gt 40) { $errMsg = $errMsg.Substring(0, 37) + "..." }
+                # Store full error for tooltip display
                 $pkg.UpdateStatus = $errMsg
             }
         } else {
@@ -3132,40 +3168,106 @@ function Invoke-WingetUpgradeByIdWithProgress {
     }
 }
 
-# Fallback function for packages that need UAC elevation (runs with visible window)
-function Invoke-WingetUpgradeElevated {
+# Fallback function for packages that need UAC elevation - batch mode (single UAC prompt)
+function Invoke-WingetUpgradeElevatedBatch {
     param(
-        [Parameter(Mandatory)] [string] $Id,
-        [bool] $Force = $false
+        [Parameter(Mandatory)] [array] $PackageIds,
+        [hashtable] $NamesById,
+        [bool] $Force = $false,
+        [hashtable] $Progress
     )
     
-    $wingetPath = (Get-Command winget -ErrorAction Stop).Source
-    
-    # Use cmd.exe to run winget and capture exit code
-    $upgradeArgs = "upgrade --id `"$Id`" --accept-source-agreements --accept-package-agreements --include-unknown --interactive"
-    if ($Force) { $upgradeArgs += " --force" }
-    
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $wingetPath
-    $psi.Arguments = $upgradeArgs
-    $psi.UseShellExecute = $true  # Required for UAC
-    $psi.CreateNoWindow = $false  # Show window for UAC prompt
-    
-    $p = New-Object System.Diagnostics.Process
-    $p.StartInfo = $psi
-    
-    if (-not $p.Start()) {
-        return [pscustomobject]@{ ExitCode = -1; Output = "Failed to start"; Error = "Failed to start winget" }
+    # Validate all package IDs to prevent command injection
+    # Valid winget IDs: alphanumeric, dots, hyphens, underscores
+    foreach ($pkgId in $PackageIds) {
+        if ($pkgId -notmatch '^[a-zA-Z0-9._-]+$') {
+            $name = if ($NamesById.ContainsKey($pkgId)) { [string]$NamesById[$pkgId] } else { $pkgId }
+            $null = $Progress.Results.Add([pscustomobject]@{
+                Id = $pkgId
+                Name = $name
+                ExitCode = -1
+                Output = ""
+                Error = "Invalid package ID format - skipped for security"
+            })
+        }
     }
     
-    $p.WaitForExit()
+    # Filter to only valid IDs
+    $validIds = @($PackageIds | Where-Object { $_ -match '^[a-zA-Z0-9._-]+$' })
+    if ($validIds.Count -eq 0) { return }
     
-    return [pscustomobject]@{
-        ExitCode = $p.ExitCode
-        Output = "Elevated install completed"
-        Error = if ($p.ExitCode -ne 0) { "Exit code: $($p.ExitCode)" } else { "" }
+    # Create temp BAT file for safe execution
+    $tempBat = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(), "winget_batch_$([guid]::NewGuid().ToString('N')).bat")
+    
+    try {
+        # Build BAT file content
+        $batLines = @('@echo off')
+        foreach ($pkgId in $validIds) {
+            $cmd = "winget upgrade --id `"$pkgId`" --accept-source-agreements --accept-package-agreements --include-unknown --disable-interactivity"
+            if ($Force) { $cmd += " --force" }
+            $batLines += $cmd
+        }
+        $batLines += 'pause'
+        
+        # Write BAT file
+        $batLines | Set-Content -Path $tempBat -Encoding ASCII
+        
+        # Run elevated
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $tempBat
+        $psi.UseShellExecute = $true
+        $psi.Verb = 'runas'
+        $psi.WindowStyle = 'Normal'
+        
+        $p = New-Object System.Diagnostics.Process
+        $p.StartInfo = $psi
+        
+        $started = $false
+        try {
+            $started = $p.Start()
+        } catch {
+            $started = $false
+        }
+        
+        if (-not $started) {
+            # UAC was cancelled
+            foreach ($pkgId in $validIds) {
+                $name = if ($NamesById.ContainsKey($pkgId)) { [string]$NamesById[$pkgId] } else { $pkgId }
+                $null = $Progress.Results.Add([pscustomobject]@{
+                    Id = $pkgId
+                    Name = $name
+                    ExitCode = -2147023673
+                    Output = ""
+                    Error = "UAC cancelled"
+                })
+            }
+            return
+        }
+        
+        $p.WaitForExit()
+        
+        # Add results for all packages
+        foreach ($pkgId in $validIds) {
+            $name = if ($NamesById.ContainsKey($pkgId)) { [string]$NamesById[$pkgId] } else { $pkgId }
+            $null = $Progress.Results.Add([pscustomobject]@{
+                Id = $pkgId
+                Name = $name
+                ExitCode = 0
+                Output = "Elevated batch install completed"
+                Error = ""
+            })
+            $Progress.CurrentPackageIndex++
+        }
+    } finally {
+        # Cleanup temp BAT file
+        if (Test-Path $tempBat) {
+            Remove-Item -Path $tempBat -Force -ErrorAction SilentlyContinue
+        }
     }
 }
+
+# Track packages that need elevation for batch processing
+$packagesNeedingElevation = [System.Collections.ArrayList]::new()
 
 $index = 0
 foreach ($id in @($Ids)) {
@@ -3182,7 +3284,7 @@ foreach ($id in @($Ids)) {
     
     $res = Invoke-WingetUpgradeByIdWithProgress -Id $id -Mode $InstallMode -Force $ForceInstall -Progress $Progress
     
-    # If failed with certain error codes, try elevated install with visible window
+    # If failed with certain error codes, queue for batch elevated install
     # -2147023673 = ERROR_CANCELLED (often UAC related)
     # -1978335189 = APPINSTALLER_CLI_ERROR_INSTALL_SYSTEM_NOT_SUPPORTED
     # 0x80070005 = E_ACCESSDENIED
@@ -3193,9 +3295,13 @@ foreach ($id in @($Ids)) {
                          ($res.Output -match 'Administrator|admin|elevation|UAC|Zugriff verweigert|Access denied')
         
         if ($needsElevation) {
-            $Progress.CurrentStatus = $Progress.LocalizedRetrying
-            $Progress.CurrentPercent = 0
-            $res = Invoke-WingetUpgradeElevated -Id $id -Force $ForceInstall
+            # Queue for batch elevated install instead of individual UAC prompt
+            $null = $packagesNeedingElevation.Add([pscustomobject]@{
+                Id = $id
+                Name = $name
+            })
+            $index++
+            continue  # Skip adding to results now, will be added after batch elevation
         }
     }
     
@@ -3210,6 +3316,15 @@ foreach ($id in @($Ids)) {
     $index++
 }
 
+# Process all packages that need elevation in a single batch (one UAC prompt)
+if ($packagesNeedingElevation.Count -gt 0 -and -not $Progress.Cancelled) {
+    $Progress.CurrentStatus = $Progress.LocalizedRetrying
+    $Progress.CurrentPercent = 0
+    
+    $elevatedIds = @($packagesNeedingElevation | ForEach-Object { $_.Id })
+    Invoke-WingetUpgradeElevatedBatch -PackageIds $elevatedIds -NamesById $NamesById -Force $ForceInstall -Progress $Progress
+}
+
 $Progress.Completed = $true
 '@
 
@@ -3221,8 +3336,3 @@ $window.Add_ContentRendered({ Update-PackageList })
 
 # Show
 $window.ShowDialog() | Out-Null
-
-
-
-
-
