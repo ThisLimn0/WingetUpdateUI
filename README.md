@@ -5,7 +5,7 @@ A lightweight PowerShell GUI for Windows Package Manager updates.
 ## Quick Start
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\src\WingetUI.ps1
+.\WingetUI.ps1
 ```
 
 ## Requirements
@@ -46,3 +46,4 @@ powershell -ExecutionPolicy Bypass -File .\src\WingetUI.ps1
 ## Version
 
 1.0.0
+
