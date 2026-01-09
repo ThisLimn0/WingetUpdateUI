@@ -1,0 +1,248 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="WingetUpdateUI" Height="700" Width="1200" WindowStartupLocation="CenterScreen"
+        x:Name="MainWindow">
+    <DockPanel x:Name="RootPanel">
+        <!-- Top Menu Bar -->
+        <Menu x:Name="TopMenu" DockPanel.Dock="Top">
+            <MenuItem x:Name="MenuSettings" Header="_Einstellungen">
+                <MenuItem x:Name="MenuProxy" Header="_Proxy-Einstellungen..."/>
+            </MenuItem>
+            <MenuItem x:Name="MenuView" Header="_Ansicht">
+                <MenuItem x:Name="MenuDarkMode" Header="Dunkelmodus" IsCheckable="True" IsChecked="False"/>
+                <Separator/>
+                <MenuItem x:Name="MenuTimeFormat" Header="Zeitformat">
+                    <MenuItem x:Name="MenuTimeDateTime" Header="Datum und Zeit" IsCheckable="True" IsChecked="True"/>
+                    <MenuItem x:Name="MenuTimeOnly" Header="Nur Zeit" IsCheckable="True"/>
+                    <MenuItem x:Name="MenuTimeNone" Header="Kein Zeitstempel" IsCheckable="True"/>
+                </MenuItem>
+            </MenuItem>
+            <MenuItem x:Name="MenuInstallMode" Header="_Installationsmodus">
+                <MenuItem x:Name="MenuModeNone" Header="Standard (keine Option)" IsCheckable="True" IsChecked="True"/>
+                <MenuItem x:Name="MenuModeSilent" Header="Leise (--silent)" IsCheckable="True"/>
+                <MenuItem x:Name="MenuModeInteractive" Header="Interaktiv (--interactive)" IsCheckable="True"/>
+                <Separator/>
+                <MenuItem x:Name="MenuForce" Header="Erzwingen (--force)" IsCheckable="True" ToolTip="Erzwingt die Installation auch bei Fehlern"/>
+            </MenuItem>
+            <MenuItem x:Name="MenuLanguage" Header="_Sprache">
+                <MenuItem x:Name="MenuLangDE" Header="Deutsch (German)" IsCheckable="True"/>
+                <MenuItem x:Name="MenuLangEN" Header="English" IsCheckable="True" IsChecked="True"/>
+                <MenuItem x:Name="MenuLangFR" Header="Français (French)" IsCheckable="True"/>
+                <MenuItem x:Name="MenuLangES" Header="Español (Spanish)" IsCheckable="True"/>
+                <MenuItem x:Name="MenuLangIT" Header="Italiano (Italian)" IsCheckable="True"/>
+                <MenuItem x:Name="MenuLangNL" Header="Nederlands (Dutch)" IsCheckable="True"/>
+            </MenuItem>
+            <MenuItem x:Name="MenuHelp" Header="_Hilfe">
+                <MenuItem x:Name="MenuAbout" Header="Über WingetUpdateUI..."/>
+            </MenuItem>
+        </Menu>
+        
+        <Grid x:Name="MainGrid" Margin="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Main content area with split view -->
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="400"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition x:Name="DetailColumnDef" Width="0"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: Package list -->
+                <DataGrid x:Name="PackagesGrid" Grid.Column="0"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="False"
+                          CanUserAddRows="False"
+                          SelectionMode="Single"
+                          HeadersVisibility="Column"
+                          GridLinesVisibility="Horizontal"
+                          RowHeaderWidth="0"
+                          VerticalScrollBarVisibility="Auto">
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow">
+                            <Setter Property="ToolTip" Value="{Binding TooltipText}"/>
+                            <Setter Property="ToolTipService.ShowDuration" Value="30000"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Foreground" Value="White"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.RowStyle>
+                    <DataGrid.CellStyle>
+                        <Style TargetType="DataGridCell">
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Foreground" Value="White"/>
+                                    <Setter Property="Background" Value="#0078D4"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGrid.CellStyle>
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="" Width="35">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding Selected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" 
+                                          HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn x:Name="ColName" Header="Name" Width="*" Binding="{Binding Name}" IsReadOnly="True"/>
+                    <DataGridTemplateColumn x:Name="ColStatus" Header="Status" Width="200" IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding UpdateStatus}" TextTrimming="CharacterEllipsis" ToolTip="{Binding UpdateStatus}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding UpdateStatus}" Value="✓">
+                                                    <Setter Property="Foreground" Value="Green"/>
+                                                    <Setter Property="FontWeight" Value="Bold"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                            <Setter Property="Foreground" Value="#C00000"/>
+                                            <Setter Property="FontSize" Value="11"/>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn x:Name="ColVersion" Header="Version" Width="100" IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Version}" Margin="8,0,0,0"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn x:Name="ColAvailable" Header="Verfügbar" Width="100" IsReadOnly="True">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding AvailableVersion}" FontWeight="Bold" Margin="8,0,0,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="#0078D4"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=DataGridRow}}" Value="True">
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <!-- Splitter -->
+            <GridSplitter x:Name="DetailSplitter" Grid.Column="1" Width="5" HorizontalAlignment="Center" 
+                          VerticalAlignment="Stretch" Background="#CCCCCC" Visibility="Collapsed"/>
+
+            <!-- Right: Detail panel -->
+            <Border x:Name="DetailPanel" Grid.Column="2" BorderBrush="#CCCCCC" BorderThickness="1" 
+                    Background="#FAFAFA" Visibility="Collapsed" Margin="5,0,0,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="12">
+                        <TextBlock x:Name="DetailTitle" FontSize="18" FontWeight="Bold" TextWrapping="Wrap" Margin="0,0,0,4"/>
+                        <TextBlock x:Name="DetailId" FontSize="12" Foreground="Gray" Margin="0,0,0,6"/>
+                        
+                        <!-- Quick Links Row (dynamically built) -->
+                        <StackPanel x:Name="QuickLinksPanel" Orientation="Horizontal" Margin="0,0,0,12" Visibility="Collapsed">
+                            <TextBlock x:Name="LinkLicense" Text="License" Foreground="#0078D4" Cursor="Hand" FontSize="11"/>
+                            <TextBlock x:Name="LinkSeparator1" Text=" | " Foreground="Gray" FontSize="11"/>
+                            <TextBlock x:Name="LinkSupport" Text="Support" Foreground="#0078D4" Cursor="Hand" FontSize="11"/>
+                            <TextBlock x:Name="LinkSeparator2" Text=" | " Foreground="Gray" FontSize="11"/>
+                            <TextBlock x:Name="LinkReleaseNotes" Text="Version Info" Foreground="#0078D4" Cursor="Hand" FontSize="11"/>
+                        </StackPanel>
+                        
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/>
+                                <RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="LabelInstalled" Grid.Row="0" Grid.Column="0" Text="Installiert: " FontWeight="SemiBold"/>
+                            <TextBlock x:Name="DetailVersion" Grid.Row="0" Grid.Column="1"/>
+                            <TextBlock x:Name="LabelAvailable" Grid.Row="1" Grid.Column="0" Text="Verfügbar: " FontWeight="SemiBold"/>
+                            <TextBlock x:Name="DetailAvailable" Grid.Row="1" Grid.Column="1" FontWeight="Bold" Foreground="#0078D4"/>
+                        </Grid>
+
+                        <TextBlock Text="Details werden geladen..." x:Name="DetailLoading" FontStyle="Italic" Foreground="Gray" Margin="0,0,0,8"/>
+                        
+                        <StackPanel x:Name="DetailContent" Visibility="Collapsed">
+                            <TextBlock x:Name="LabelPublisher" Text="Herausgeber" FontWeight="SemiBold" Margin="0,8,0,2"/>
+                            <TextBlock x:Name="DetailPublisher" TextWrapping="Wrap"/>
+                            
+                            <TextBlock x:Name="LabelAuthor" Text="Autor" FontWeight="SemiBold" Margin="0,8,0,2"/>
+                            <TextBlock x:Name="DetailAuthor" TextWrapping="Wrap"/>
+                            
+                            <TextBlock x:Name="LabelDescription" Text="Beschreibung" FontWeight="SemiBold" Margin="0,12,0,4"/>
+                            <TextBlock x:Name="DetailDescription" TextWrapping="Wrap" MaxHeight="200"/>
+                            
+                            <TextBlock x:Name="LabelLicense" Text="Lizenz" FontWeight="SemiBold" Margin="0,12,0,2"/>
+                            <TextBlock x:Name="DetailLicense" TextWrapping="Wrap"/>
+                            
+                            <TextBlock x:Name="LabelHomepage" Text="Homepage" FontWeight="SemiBold" Margin="0,12,0,2"/>
+                            <TextBlock x:Name="DetailHomepage" TextWrapping="Wrap" Foreground="#0078D4" Cursor="Hand"/>
+                            
+                            <TextBlock x:Name="LabelInstaller" Text="Installer" FontWeight="SemiBold" Margin="0,12,0,2"/>
+                            <TextBlock x:Name="DetailInstallerType" TextWrapping="Wrap"/>
+                            
+                            <TextBlock x:Name="LabelInstallerUrl" Text="Download" FontWeight="SemiBold" Margin="0,12,0,2"/>
+                            <TextBlock x:Name="DetailInstallerUrl" TextWrapping="Wrap" Foreground="#0078D4" Cursor="Hand"/>
+                            
+                            <TextBlock x:Name="LabelReleaseDate" Text="Veröffentlicht" FontWeight="SemiBold" Margin="0,12,0,2"/>
+                            <TextBlock x:Name="DetailReleaseDate" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+            </Grid>
+
+            <!-- Bottom bar: Buttons + Progress + Log collapsed -->
+            <Grid Grid.Row="1" Margin="0,10,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                
+                <DockPanel Grid.Row="0">
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                        <ToggleButton x:Name="LogToggleButton" Content="📋 Log" MinWidth="70" Margin="0,0,6,0" Padding="8,5" IsChecked="False"/>
+                        <Button x:Name="RefreshButton" Content="⟳ Aktualisieren" MinWidth="110" Margin="0,0,6,0" Padding="8,5"/>
+                        <Button x:Name="UpdateSelectedButton" Content="⬆ Update" MinWidth="90" Margin="0,0,6,0" Padding="8,5"/>
+                        <Button x:Name="CancelButton" Content="✕ Abbrechen" MinWidth="90" Margin="0,0,6,0" Padding="8,5" Visibility="Collapsed" Background="#FFE57373"/>
+                        <Button x:Name="SelectAllButton" Content="☑ Alle" MinWidth="70" Margin="0,0,6,0" Padding="8,5"/>
+                        <Button x:Name="SelectNoneButton" Content="☐ Keine" MinWidth="70" Margin="0,0,6,0" Padding="8,5"/>
+                        
+                        <!-- Divider -->
+                        <Rectangle x:Name="ButtonDivider" Width="1" Fill="#CCCCCC" Margin="12,2,12,2"/>
+                        
+                        <!-- Progress bar and status -->
+                        <ProgressBar x:Name="BusyBar" Height="12" Width="150" IsIndeterminate="False" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="StatusText" VerticalAlignment="Center" Text="Bereit" MinWidth="120"/>
+                    </StackPanel>
+                </DockPanel>
+                
+                <Border x:Name="LogPanel" Grid.Row="1" Margin="0,8,0,0" Visibility="Collapsed" BorderBrush="#CCCCCC" BorderThickness="1">
+                    <TextBox x:Name="LogBox" Height="120" IsReadOnly="True" TextWrapping="Wrap" 
+                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                             FontFamily="Consolas" FontSize="11"/>
+                </Border>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>
+
+
+
